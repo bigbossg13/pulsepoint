@@ -1,0 +1,68 @@
+# Rebuilds the map data from FTCScout + the FTC Events API and deploys the
+# site to GitHub Pages. Runs every 6 hours so event status and stats stay fresh.
+name: Build data & deploy
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # The very first run geocodes every location at 1 request/second.
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Restore geocode cache
+        uses: actions/cache/restore@v4
+        with:
+          path: data/geocache.json
+          key: geocache-${{ github.run_id }}
+          restore-keys: geocache-
+
+      - name: Build data (current + previous season)
+        env:
+          FTC_EVENTS_USERNAME: ${{ secrets.FTC_EVENTS_USERNAME }}
+          FTC_EVENTS_TOKEN: ${{ secrets.FTC_EVENTS_TOKEN }}
+        run: |
+          current=$(node -e 'const d=new Date();console.log(d.getUTCMonth()>=8?d.getUTCFullYear():d.getUTCFullYear()-1)')
+          npm run build-data -- --season "$current"
+          npm run build-data -- --season "$((current - 1))"
+
+      - name: Save geocode cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/geocache.json
+          key: geocache-${{ github.run_id }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

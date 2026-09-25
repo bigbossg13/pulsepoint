@@ -1,0 +1,20 @@
+{
+  "name": "pulsepoint",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Interactive world map of FIRST Tech Challenge teams and events, powered by FTCScout and the FTC Events API.",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "postinstall": "node scripts/vendor.js",
+    "build-data": "node scripts/build-data.js",
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "leaflet": "^1.9.4",
+    "leaflet.markercluster": "^1.5.3"
+  }
+}

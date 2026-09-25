@@ -1,5 +1,11 @@
 # Rebuilds the map data from FTCScout + the FTC Events API and deploys the
-# site to GitHub Pages. Runs every 6 hours so event status and stats stay fresh.
+# site to GitHub Pages.
+#
+# - Scheduled (every 6 hours) and manual runs rebuild all data.
+# - Pushes that only change the site (public/, docs, workflows) reuse the data
+#   already published on the live site, so they deploy in a couple of minutes.
+# - Pushes that change the data pipeline (lib/, scripts/, package files)
+#   rebuild the data.
 name: Build data & deploy
 on:
   push:
@@ -20,17 +26,52 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # The very first run geocodes every location at 1 request/second.
+    # The very first full run geocodes every location at 1 request/second.
     timeout-minutes: 330
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
       - run: npm ci
 
+      - id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Decide whether to rebuild data
+        id: mode
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          mode=full
+          if [ "${{ github.event_name }}" = "push" ] && [ -n "$BEFORE" ] && ! echo "$BEFORE" | grep -qE '^0+$' \
+             && git cat-file -e "$BEFORE" 2>/dev/null \
+             && ! git diff --name-only "$BEFORE" "${{ github.sha }}" | grep -qE '^(lib/|scripts/|package(-lock)?\.json$)'; then
+            mode=reuse
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "Data mode: $mode"
+
+      - name: Reuse data from the live site
+        id: reuse
+        if: steps.mode.outputs.mode == 'reuse'
+        continue-on-error: true
+        env:
+          BASE_URL: ${{ steps.pages.outputs.base_url }}
+        run: |
+          set -euo pipefail
+          mkdir -p public/data
+          curl -fsSL "$BASE_URL/data/seasons.json" -o public/data/seasons.json
+          for season in $(node -e 'console.log(require("./public/data/seasons.json").seasons.join(" "))'); do
+            curl -fsSL "$BASE_URL/data/$season.json" -o "public/data/$season.json"
+          done
+          ls -la public/data
+
       - name: Restore geocode cache
+        if: steps.mode.outputs.mode == 'full' || steps.reuse.outcome == 'failure'
         uses: actions/cache/restore@v4
         with:
           path: data/geocache.json
@@ -38,16 +79,18 @@ jobs:
           restore-keys: geocache-
 
       - name: Build data (current + previous season)
+        if: steps.mode.outputs.mode == 'full' || steps.reuse.outcome == 'failure'
         env:
           FTC_EVENTS_USERNAME: ${{ secrets.FTC_EVENTS_USERNAME }}
           FTC_EVENTS_TOKEN: ${{ secrets.FTC_EVENTS_TOKEN }}
         run: |
+          rm -f public/data/*.json
           current=$(node -e 'const d=new Date();console.log(d.getUTCMonth()>=8?d.getUTCFullYear():d.getUTCFullYear()-1)')
           npm run build-data -- --season "$current"
           npm run build-data -- --season "$((current - 1))"
 
       - name: Save geocode cache
-        if: always()
+        if: always() && (steps.mode.outputs.mode == 'full' || steps.reuse.outcome == 'failure')
         uses: actions/cache/save@v4
         with:
           path: data/geocache.json

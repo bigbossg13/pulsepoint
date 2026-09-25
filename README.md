@@ -48,7 +48,10 @@ Other options (environment variables): `GEOCODE_LIMIT`, `NOMINATIM_URL`,
 ## Deploying (GitHub Pages)
 
 `.github/workflows/deploy.yml` rebuilds the data for the current and previous
-seasons every 6 hours and publishes `public/` to GitHub Pages. To set it up:
+seasons every 6 hours (or when you click **Run workflow**) and publishes
+`public/` to GitHub Pages. Pushes that only change the site reuse the data
+already live, so they deploy in a couple of minutes; pushes that change
+`lib/`, `scripts/` or the package files rebuild the data. To set it up:
 
 1. Under **Settings → Pages**, set the source to **GitHub Actions**.
 2. Under **Settings → Secrets and variables → Actions**, add `FTC_EVENTS_USERNAME` and `FTC_EVENTS_TOKEN`.

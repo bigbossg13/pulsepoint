@@ -23,8 +23,8 @@ jobs:
     # The very first run geocodes every location at 1 request/second.
     timeout-minutes: 330
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm

@@ -104,22 +104,14 @@ const map = L.map("map", { preferCanvas: true, worldCopyJump: true, zoomControl:
 );
 const renderer = L.canvas({ padding: 0.5 });
 const dark = matchMedia("(prefers-color-scheme: dark)");
-let tiles;
-function setTiles() {
-  tiles?.remove();
-  const style = dark.matches ? "dark_all" : "light_all";
-  tiles = L.tileLayer(`https://{s}.basemaps.cartocdn.com/${style}/{z}/{x}/{y}{r}.png`, {
-    maxZoom: 18,
-    subdomains: "abcd",
-    attribution:
-      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-  }).addTo(map);
-}
-setTiles();
-dark.addEventListener?.("change", () => {
-  setTiles();
-  renderAll();
-});
+// Standard OpenStreetMap tiles need no API key. They're toned down (and
+// inverted in dark mode) with a CSS filter on .basemap so markers stand out.
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19,
+  className: "basemap",
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+}).addTo(map);
+dark.addEventListener?.("change", () => renderAll());
 
 const colorFor = (bucket) => (bucket < 0 ? css("--t-none") : css(`--t${bucket}`));
 

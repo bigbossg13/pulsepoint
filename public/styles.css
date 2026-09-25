@@ -227,6 +227,11 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
 }
 
 .leaflet-container { font: inherit; }
+.basemap { filter: saturate(0.45) brightness(1.03); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .basemap { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9) saturate(0.35); }
+}
+:root[data-theme="dark"] .basemap { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9) saturate(0.35); }
 .leaflet-tooltip { font-size: 12.5px; }
 .leaflet-popup-content-wrapper, .leaflet-popup-tip, .leaflet-tooltip, .leaflet-bar a, .leaflet-control-attribution {
   background: var(--panel); color: var(--text);

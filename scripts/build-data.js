@@ -79,7 +79,12 @@ if (!officialEvents && !officialTeams && !scoutEvents) {
   process.exit(1);
 }
 
-const teams = mergeTeams({ scoutTeams: scoutTeams ?? [], officialTeams: officialTeams ?? [], attendance });
+const merged = mergeTeams({ scoutTeams: scoutTeams ?? [], officialTeams: officialTeams ?? [], attendance });
+// The FTC Events team list includes many teams that never compete in a given
+// season. Once event rosters exist, keep only teams that attended an event or
+// have stats; before that (early season) the registration list is all we have.
+const teams = attendance.size ? merged.filter((t) => t.events?.length || t.stats?.tot) : merged;
+if (teams.length < merged.length) log(`Dropped ${merged.length - teams.length} registered teams with no events this season.`);
 const events = mergeEvents({ scoutEvents: scoutEvents ?? [], officialEvents: officialEvents ?? [] });
 
 const geocoder = new Geocoder({ cachePath: join(root, "data", "geocache.json"), limit: geocodeLimit });
@@ -128,6 +133,7 @@ if (!teams.length && !events.length) {
 writeFileSync(join(args.out, `${season}.json`), JSON.stringify(dataset));
 manifest.seasons = [...new Set([...manifest.seasons, season])].sort((a, b) => b - a);
 manifest.updated = { ...manifest.updated, [season]: dataset.generatedAt };
+manifest.withStats = { ...manifest.withStats, [season]: teams.filter((t) => t.stats?.tot).length };
 writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
 
 const mapped = teams.filter((t) => t.loc).length;

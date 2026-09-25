@@ -160,7 +160,7 @@ map.addLayer(linkLayer);
 async function loadSeasons() {
   const res = await fetch("data/seasons.json", { cache: "no-cache" });
   if (!res.ok) throw new Error("No data has been built yet. Run `npm run build-data`.");
-  return (await res.json()).seasons ?? [];
+  return res.json();
 }
 
 async function loadSeason(season) {
@@ -700,10 +700,14 @@ async function main() {
   setupFilters();
   setupSearch();
   const initial = readHash();
-  const seasons = await loadSeasons();
+  const manifest = await loadSeasons();
+  const seasons = manifest.seasons ?? [];
   if (!seasons.length) throw new Error("No seasons available. Run `npm run build-data`.");
   $("season").innerHTML = seasons.map((s) => `<option value="${s}">${seasonLabel(s)}</option>`).join("");
-  const season = seasons.includes(initial.season) ? initial.season : seasons[0];
+  // Default to the newest season that has match stats, so a season that has
+  // only just kicked off doesn't open as a map of empty markers.
+  const withStats = seasons.find((s) => manifest.withStats?.[s] > 0);
+  const season = seasons.includes(initial.season) ? initial.season : (withStats ?? seasons[0]);
   $("season").value = season;
   state.filters.country = initial.country;
   state.filters.state = initial.state;

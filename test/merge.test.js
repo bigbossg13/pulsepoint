@@ -22,9 +22,9 @@ const officialTeams = [
     city: "Irvine", stateProv: "CA", country: "USA", rookieYear: 2015, robotName: "Lucky", homeRegion: "USCASO" },
 ];
 const scoutTeams = [
-  { number: 13, name: "13 (scout)", city: "Irvine", state: "CA", country: "USA", rookieYear: 2015,
+  { number: 13, name: "13 (scout)", location: { city: "Irvine", state: "CA", country: "USA" }, rookieYear: 2015,
     quickStats: { tot: { value: 123.456, rank: 2 }, auto: { value: 40, rank: 5 }, dc: { value: 60, rank: 3 }, eg: { value: 23.4, rank: 9 }, count: 3 } },
-  { number: 42, name: "Answer", city: "Irvine", state: "CA", country: "USA", rookieYear: 2025, quickStats: null },
+  { number: 42, name: "Answer", location: { city: "Irvine", state: "CA", country: "USA" }, rookieYear: 2025, quickStats: null },
 ];
 
 test("event categories normalise both APIs' type labels", () => {
@@ -54,6 +54,7 @@ test("teams prefer FTC Events registration data and take stats from FTCScout", (
   assert.deepEqual(t13.stats.tot, { v: 123.46, r: 2 });
   assert.deepEqual(t13.events, ["FTCCMP1", "USCAQ1"]);
   assert.equal(t42.name, "Answer");
+  assert.equal(t42.city, "Irvine");
   assert.equal(t42.stats, undefined);
 });
 

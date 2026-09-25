@@ -113,10 +113,19 @@ const dataset = {
 };
 
 mkdirSync(args.out, { recursive: true });
-writeFileSync(join(args.out, `${season}.json`), JSON.stringify(dataset));
-
 const manifestPath = join(args.out, "seasons.json");
 const manifest = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, "utf8")) : { seasons: [] };
+
+// A season that hasn't started yet has nothing to show; leave it out of the
+// season picker rather than defaulting visitors to an empty map.
+if (!teams.length && !events.length) {
+  log("No teams or events yet; not publishing this season.");
+  manifest.seasons = manifest.seasons.filter((s) => s !== season);
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
+  process.exit(0);
+}
+
+writeFileSync(join(args.out, `${season}.json`), JSON.stringify(dataset));
 manifest.seasons = [...new Set([...manifest.seasons, season])].sort((a, b) => b - a);
 manifest.updated = { ...manifest.updated, [season]: dataset.generatedAt };
 writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");

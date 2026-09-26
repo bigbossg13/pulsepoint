@@ -4,7 +4,7 @@
 
 const STATUSES = [
   ["upcoming", "Upcoming"],
-  ["ongoing", "Live"],
+  ["ongoing", "Live now"],
   ["completed", "Completed"],
 ];
 const CATEGORIES = [
@@ -23,7 +23,7 @@ const DEFAULT_CATEGORIES = new Set(CATEGORIES.filter((c) => c !== "Other"));
 // Discrete buckets keep the legend readable; index 0 = lowest.
 const COLOR_MODES = {
   opr: {
-    title: "Season OPR (world rank)",
+    title: "Season OPR, world rank",
     buckets: ["Bottom 50%", "Top 50%", "Top 25%", "Top 10%", "Top 5%", "Top 1%"],
     none: "No matches yet",
     bucket(team, ctx) {
@@ -143,9 +143,9 @@ const eventLayer = L.markerClusterGroup({
     const kids = cluster.getAllChildMarkers().map((m) => m.options.status);
     const status = kids.includes("ongoing") ? "ongoing" : kids.includes("upcoming") ? "upcoming" : "completed";
     return L.divIcon({
-      html: `<div class="event-marker ${status}" style="width:22px;height:22px"></div><span style="position:absolute;inset:0;display:grid;place-items:center;color:#fff;font-weight:700;font-size:11px">${n}</span>`,
+      html: `<div class="event-cluster"><div class="event-marker ${status}"></div><b>${n}</b></div>`,
       className: "",
-      iconSize: [22, 22],
+      iconSize: [26, 26],
     });
   },
 });
@@ -191,7 +191,7 @@ function buildMarkers() {
   state.markers.events.clear();
   for (const team of state.data.teams) {
     if (!team.loc) continue;
-    const m = L.circleMarker(team.loc, { renderer, radius: 6, weight: 1.5, color: "#fff", fillOpacity: 0.95 });
+    const m = L.circleMarker(team.loc, { renderer, radius: 7, weight: 2, color: "#fff", fillOpacity: 1 });
     m.bindTooltip(() => teamTooltip(team), { direction: "top", offset: [0, -4] });
     m.on("click", () => select("team", team.number));
     state.markers.teams.set(team.number, m);
@@ -238,10 +238,10 @@ function renderAll() {
     const isSel = team.number === selectedTeam;
     m.setStyle({
       fillColor: colorFor(bucket),
-      color: isSel ? css("--warn") : dark.matches ? "#0f141b" : "#fff",
-      weight: isSel ? 3 : 1.5,
+      color: isSel ? css("--accent") : "#fff",
+      weight: isSel ? 4 : 2,
     });
-    m.setRadius(isSel ? 9 : 6);
+    m.setRadius(isSel ? 11 : 7);
     teamMarkers.push(m);
   }
   teamLayer.clearLayers();
@@ -253,7 +253,7 @@ function renderAll() {
     const m = state.markers.events.get(ev.code);
     if (!m || !eventVisible(ev)) continue;
     const sel = ev.code === selectedEvent ? " selected" : "";
-    m.setIcon(L.divIcon({ className: "", html: `<div class="event-marker ${ev.status}${sel}"></div>`, iconSize: [14, 14] }));
+    m.setIcon(L.divIcon({ className: "", html: `<div class="event-marker ${ev.status}${sel}"></div>`, iconSize: [16, 16] }));
     m.setZIndexOffset(sel ? 1000 : 0);
     eventMarkers.push(m);
   }
@@ -266,49 +266,52 @@ function renderAll() {
 }
 
 function renderLegend(mode) {
-  const rows = [];
-  if (state.filters.showTeams) {
-    rows.push(`<h4>${esc(mode.title)}</h4>`);
-    for (let i = mode.buckets.length - 1; i >= 0; i--) {
-      if (!mode.buckets[i]) continue;
-      rows.push(`<div class="item"><span class="dot" style="background:${colorFor(i)}"></span>${esc(mode.buckets[i])}</div>`);
-    }
-    if (mode.none) rows.push(`<div class="item"><span class="dot" style="background:${colorFor(-1)}"></span>${esc(mode.none)}</div>`);
+  const f = state.filters;
+  const el = $("legend");
+  if (!f.showTeams && !f.showEvents) {
+    el.hidden = true;
+    return;
   }
-  if (state.filters.showEvents) {
-    rows.push("<h4>Events</h4>");
-    for (const [s, label] of STATUSES) {
-      rows.push(`<div class="item"><span class="event-marker ${s}" style="width:10px;height:10px;animation:none"></span>${label}</div>`);
-    }
-  }
-  const open = $("legend").querySelector("details")?.open ?? !matchMedia("(max-width: 720px)").matches;
-  $("legend").innerHTML = `<details ${open ? "open" : ""}><summary>Legend</summary>${rows.join("")}</details>`;
-  $("legend").hidden = rows.length === 0;
+  const buckets = mode.buckets.map((label, i) => ({ label, i })).filter((b) => b.label);
+  const cols = `grid-template-columns:repeat(${buckets.length},minmax(0,1fr))`;
+  const teams = f.showTeams
+    ? `<div class="bar" style="${cols}">${buckets.map((b) => `<span style="background:${colorFor(b.i)}"></span>`).join("")}</div>
+       <div class="labels" style="${cols}">${buckets.map((b) => `<span>${esc(b.label)}</span>`).join("")}</div>`
+    : "";
+  const keys = [
+    f.showTeams && mode.none ? `<span><i class="dot" style="background:${colorFor(-1)}"></i>${esc(mode.none)}</span>` : "",
+    ...(f.showEvents ? STATUSES.map(([s, label]) => `<span><i class="diamond ${s}"></i>${label}</span>`) : []),
+  ].join("");
+  const title = f.showTeams ? mode.title : "Events";
+  const hint = f.showTeams && state.filters.colorBy !== "none" ? `<span class="hint">Clusters show their average</span>` : "";
+  const open = el.querySelector("details")?.open ?? !matchMedia("(max-width: 720px)").matches;
+  el.innerHTML = `<details ${open ? "open" : ""}><summary>${esc(title)}${hint}</summary>${teams}${
+    keys ? `<div class="keys"${f.showTeams ? "" : ' style="border:0;padding:0"'}>${keys}</div>` : ""
+  }</details>`;
+  el.hidden = false;
 }
 
 function renderSummary(teamCount, eventCount) {
   const f = state.filters;
-  const where = f.state ? `${f.state}, ${f.country}` : f.country || "worldwide";
+  const where = f.state ? `${f.state}, ${f.country}` : f.country || "Worldwide";
+  $("stats-pill").innerHTML = `
+    <span><strong>${teamCount.toLocaleString()}</strong> teams</span><span class="sep"></span>
+    <span><strong>${eventCount.toLocaleString()}</strong> events</span><span class="sep"></span>
+    <span class="where">${esc(where)} · ${seasonLabel(state.season)}</span>`;
+
   const top = state.data.teams
     .filter((t) => teamVisible(t) && t.stats?.tot)
     .sort((a, b) => a.stats.tot.r - b.stats.tot.r)
     .slice(0, 5);
-  const unmapped = state.data.teams.filter((t) => !t.loc).length;
-  $("summary").innerHTML = `
-    <p><strong>${teamCount.toLocaleString()}</strong> teams and <strong>${eventCount.toLocaleString()}</strong> events shown ${esc(where)} for ${seasonLabel(state.season)}.${
-      unmapped ? ` <span title="Location could not be geocoded yet">${unmapped} teams unmapped.</span>` : ""
-    }</p>
-    ${
-      top.length
-        ? `<h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin:10px 0 4px">Top teams by OPR</h3>
-           <ul class="list">${top
-             .map(
-               (t) =>
-                 `<li data-team="${t.number}"><span><strong>${t.number}</strong> ${esc(t.name ?? "")}</span><span class="meta">${fmt(t.stats.tot.v)} · #${t.stats.tot.r}</span></li>`,
-             )
-             .join("")}</ul>`
-        : ""
-    }`;
+  $("summary").innerHTML = top.length
+    ? `<h3>Top teams ${f.country ? "here" : "worldwide"} by OPR</h3>
+       <ul class="list">${top
+         .map(
+           (t) =>
+             `<li data-team="${t.number}"><span class="main"><span>${esc(t.name ?? `Team ${t.number}`)}</span><span class="meta">${t.number} · ${esc(place(t))}</span></span><span class="num">${fmt(t.stats.tot.v)}</span></li>`,
+         )
+         .join("")}</ul>`
+    : "";
 }
 
 // Lines from the selected team to its events, or from an event to its teams.
@@ -316,7 +319,7 @@ function renderLinks() {
   linkLayer.clearLayers();
   const sel = state.selected;
   if (!sel) return;
-  const color = css("--warn");
+  const color = css("--accent");
   if (sel.kind === "team") {
     const team = state.teamsByNumber.get(sel.id);
     if (!team?.loc) return;
@@ -345,14 +348,29 @@ function select(kind, id, { fly = false } = {}) {
   if (!fly || !kind) return;
   const item = kind === "team" ? state.teamsByNumber.get(id) : state.eventsByCode.get(id);
   if (!item?.loc) return;
-  if (kind === "team") {
-    map.flyTo(item.loc, Math.max(map.getZoom(), 11));
-    return;
+  // Keep the target in the part of the map the details card doesn't cover.
+  const [padTL, padBR] = detailsPadding();
+  const pts = [item.loc];
+  // Frame an event together with the teams attending it.
+  if (kind === "event") pts.push(...(item.teams ?? []).map((n) => state.teamsByNumber.get(n)?.loc).filter(Boolean));
+  const maxZoom = Math.max(map.getZoom(), 11);
+  map.flyToBounds(L.latLngBounds(pts), {
+    paddingTopLeft: padTL,
+    paddingBottomRight: padBR,
+    maxZoom: pts.length > 1 ? 11 : maxZoom,
+  });
+}
+
+// The details card covers the map's right side (desktop) or bottom (phones).
+function detailsPadding() {
+  const card = $("details");
+  const mapBox = $("map").getBoundingClientRect();
+  if (card.hidden) return [L.point(40, 40), L.point(40, 40)];
+  const box = card.getBoundingClientRect();
+  if (matchMedia("(max-width: 720px)").matches) {
+    return [L.point(24, 130), L.point(24, Math.max(40, mapBox.bottom - box.top + 24))];
   }
-  // Frame the event together with the teams attending it.
-  const pts = [item.loc, ...(item.teams ?? []).map((n) => state.teamsByNumber.get(n)?.loc).filter(Boolean)];
-  if (pts.length > 1) map.flyToBounds(L.latLngBounds(pts), { padding: [40, 40], maxZoom: 11 });
-  else map.flyTo(item.loc, Math.max(map.getZoom(), 11));
+  return [L.point(40, 90), L.point(Math.max(40, mapBox.right - box.left + 24), 40)];
 }
 
 function renderDetails() {
@@ -366,91 +384,108 @@ function renderDetails() {
   el.hidden = false;
   el.innerHTML = sel.kind === "team" ? teamDetails(state.teamsByNumber.get(sel.id)) : eventDetails(state.eventsByCode.get(sel.id));
   el.querySelector(".close")?.addEventListener("click", () => select(null));
-  if (matchMedia("(max-width: 720px)").matches) setSidebarOpen(true);
-  el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  el.scrollTop = 0;
+  if (matchMedia("(max-width: 720px)").matches) setSidebarOpen(false);
+}
+
+const CLOSE_BTN = `<button type="button" class="icon-btn close" aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
+
+function notFound(what) {
+  return `<div class="head"><div><h2>${what} not found</h2><span class="sub">It isn't in the ${seasonLabel(state.season)} data.</span></div>${CLOSE_BTN}</div>`;
+}
+
+function eventRow(e) {
+  const meta = `${esc(e.start ? dateRange(e) : "Date TBA")} · ${esc(statusLabel(e.status))}`;
+  return `<li data-event="${esc(e.code)}"><i class="diamond ${e.status}"></i><span class="main"><span>${esc(e.name)}</span><span class="meta ${e.status}">${meta}</span></span></li>`;
+}
+
+function rankBadge(t) {
+  const r = t.stats?.tot?.r;
+  if (!r) return `<div class="rank-badge none"><i class="dot" style="background:${colorFor(-1)}"></i>No matches played yet this season</div>`;
+  const bucket = COLOR_MODES.opr.bucket(t, state.ctx);
+  const label = bucket >= 1 ? `<strong>${esc(COLOR_MODES.opr.buckets[bucket])} worldwide</strong> · ` : "";
+  return `<div class="rank-badge"><i class="dot" style="background:${colorFor(bucket)}"></i><span>${label}rank #${r.toLocaleString()} of ${state.ctx.ranked.toLocaleString()} by OPR</span></div>`;
 }
 
 function teamDetails(t) {
-  if (!t) return `<p>Team not found in this season.</p><button class="icon-btn close" title="Close">✕</button>`;
+  if (!t) return notFound("Team");
   const s = t.stats;
   const statBox = (label, st) =>
-    `<div class="stat"><div class="v">${fmt(st?.v)}</div><div class="l">${label}</div><div class="r">${st?.r ? `#${st.r}` : "–"}</div></div>`;
+    `<div class="stat"><span class="l">${label}</span><span class="v">${fmt(st?.v)}</span><span class="r">${st?.r ? `#${st.r.toLocaleString()}` : "–"}</span></div>`;
   const events = (t.events ?? [])
     .map((c) => state.eventsByCode.get(c))
     .filter(Boolean)
     .sort((a, b) => (a.start ?? "").localeCompare(b.start ?? ""));
   const season = state.season;
+  const sub = [place(t) || "Location unknown", t.rookieYear && `Rookie year ${t.rookieYear}`].filter(Boolean).join(" · ");
+  const extra = [
+    t.school && `<dt>Organization</dt><dd>${esc(t.school)}</dd>`,
+    t.robotName && `<dt>Robot</dt><dd>${esc(t.robotName)}</dd>`,
+  ].filter(Boolean);
   return `
-    <button class="icon-btn close" title="Close">✕</button>
-    <h2>${t.number} · ${esc(t.name ?? "Unknown team")}</h2>
-    <p class="sub">${esc(place(t) || "Location unknown")}</p>
-    <dl class="kv">
-      ${t.school ? `<dt>Organization</dt><dd>${esc(t.school)}</dd>` : ""}
-      ${t.rookieYear ? `<dt>Rookie year</dt><dd>${t.rookieYear}</dd>` : ""}
-      ${t.robotName ? `<dt>Robot</dt><dd>${esc(t.robotName)}</dd>` : ""}
-      ${t.region ? `<dt>Home region</dt><dd>${esc(t.region)}</dd>` : ""}
-    </dl>
-    <h3>${seasonLabel(season)} performance ${s?.count ? `· ${s.count} event${s.count === 1 ? "" : "s"}` : ""}</h3>
-    ${
-      s?.tot
-        ? `<div class="stat-grid">${statBox("Total OPR", s.tot)}${statBox("Auto", s.auto)}${statBox("Teleop", s.dc)}${statBox("Endgame", s.eg)}</div>`
-        : `<p class="sub">No matches played yet this season.</p>`
-    }
-    <h3>Events (${events.length})</h3>
-    ${
-      events.length
-        ? `<ul class="list">${events
-            .map(
-              (e) =>
-                `<li data-event="${esc(e.code)}"><span>${esc(e.name)}</span><span class="meta"><span class="badge ${e.status}">${esc(statusLabel(e.status))}</span> ${esc(e.start?.slice(5) ?? "")}</span></li>`,
-            )
-            .join("")}</ul>`
-        : `<p class="sub">No events found yet.</p>`
-    }
-    <div class="links">
-      <a href="https://ftcscout.org/teams/${t.number}?season=${season}" target="_blank" rel="noopener">FTCScout ↗</a>
-      <a href="https://ftc-events.firstinspires.org/${season}/team/${t.number}" target="_blank" rel="noopener">FTC Events ↗</a>
-      ${safeUrl(t.website) ? `<a href="${esc(safeUrl(t.website))}" target="_blank" rel="noopener">Website ↗</a>` : ""}
+    <div class="head">
+      <div>
+        <span class="eyebrow">Team ${t.number}</span>
+        <h2>${esc(t.name ?? `Team ${t.number}`)}</h2>
+        <span class="sub">${esc(sub)}</span>
+      </div>
+      ${CLOSE_BTN}
+    </div>
+    ${rankBadge(t)}
+    ${s?.tot ? `<div class="stat-grid">${statBox("Total OPR", s.tot)}${statBox("Auto", s.auto)}${statBox("Teleop", s.dc)}${statBox("Endgame", s.eg)}</div>` : ""}
+    ${extra.length ? `<dl class="kv">${extra.join("")}</dl>` : ""}
+    <h3>This season's events</h3>
+    ${events.length ? `<ul class="list">${events.map(eventRow).join("")}</ul>` : `<p class="sub" style="margin:0">No events found yet.</p>`}
+    <div class="actions">
+      <a class="btn primary" href="https://ftcscout.org/teams/${t.number}?season=${season}" target="_blank" rel="noopener">Open in FTCScout ↗</a>
+      <a class="btn outline" href="https://ftc-events.firstinspires.org/${season}/team/${t.number}" target="_blank" rel="noopener">FTC Events ↗</a>
+      ${safeUrl(t.website) ? `<a class="btn link" href="${esc(safeUrl(t.website))}" target="_blank" rel="noopener">Team website ↗</a>` : ""}
     </div>`;
 }
 
 function eventDetails(e) {
-  if (!e) return `<p>Event not found in this season.</p><button class="icon-btn close" title="Close">✕</button>`;
+  if (!e) return notFound("Event");
   const teams = (e.teams ?? [])
     .map((n) => state.teamsByNumber.get(n) ?? { number: n })
     .sort((a, b) => (a.stats?.tot?.r ?? Infinity) - (b.stats?.tot?.r ?? Infinity) || a.number - b.number);
   const oprs = teams.map((t) => t.stats?.tot?.v).filter((v) => typeof v === "number");
   const avg = oprs.length ? oprs.reduce((a, b) => a + b, 0) / oprs.length : null;
   const season = state.season;
+  const location = [e.address, place(e)].filter(Boolean).join(", ") || (e.remote ? "Remote" : "TBA");
   return `
-    <button class="icon-btn close" title="Close">✕</button>
-    <h2>${esc(e.name)}</h2>
-    <p class="sub"><span class="badge ${e.status}">${esc(statusLabel(e.status))}</span> ${esc(e.category)} · ${esc(dateRange(e))}</p>
+    <div class="head">
+      <div>
+        <span class="eyebrow">${esc(e.category)} · ${esc(e.code)}</span>
+        <h2>${esc(e.name)}</h2>
+        <span class="sub">${esc(dateRange(e))}</span>
+      </div>
+      ${CLOSE_BTN}
+    </div>
+    <div class="rank-badge none"><i class="diamond ${e.status}"></i><span><strong>${esc(statusLabel(e.status))}</strong>${
+      avg !== null ? ` · field average OPR ${fmt(avg)} (${oprs.length} teams with stats)` : ""
+    }</span></div>
     <dl class="kv">
-      <dt>Code</dt><dd>${esc(e.code)}</dd>
       ${e.venue ? `<dt>Venue</dt><dd>${esc(e.venue)}</dd>` : ""}
-      <dt>Location</dt><dd>${esc([e.address, place(e)].filter(Boolean).join(", ") || (e.remote ? "Remote" : "TBA"))}</dd>
+      <dt>Location</dt><dd>${esc(location)}</dd>
       ${e.type && e.type !== e.category ? `<dt>Type</dt><dd>${esc(e.type)}</dd>` : ""}
       ${e.league ? `<dt>League</dt><dd>${esc(e.league)}</dd>` : ""}
-      ${e.region ? `<dt>Region</dt><dd>${esc(e.region)}</dd>` : ""}
-      ${avg !== null ? `<dt>Avg team OPR</dt><dd>${fmt(avg)} <span class="sub">(${oprs.length} teams with stats)</span></dd>` : ""}
     </dl>
     <h3>Teams (${teams.length})</h3>
     ${
       teams.length
-        ? `<ul class="list">${teams
+        ? `<ul class="list scroll">${teams
             .map(
               (t) =>
-                `<li data-team="${t.number}"><span><strong>${t.number}</strong> ${esc(t.name ?? "")}</span><span class="meta">${t.stats?.tot ? `${fmt(t.stats.tot.v)} · #${t.stats.tot.r}` : ""}</span></li>`,
+                `<li data-team="${t.number}"><i class="dot" style="background:${colorFor(COLOR_MODES.opr.bucket(t, state.ctx))}"></i><span class="main"><span>${esc(t.name ?? `Team ${t.number}`)}</span><span class="meta">${t.number}${t.stats?.tot ? ` · rank #${t.stats.tot.r.toLocaleString()}` : ""}</span></span><span class="num">${t.stats?.tot ? fmt(t.stats.tot.v) : ""}</span></li>`,
             )
             .join("")}</ul>`
-        : `<p class="sub">Team list not published yet.</p>`
+        : `<p class="sub" style="margin:0">Team list not published yet.</p>`
     }
-    <div class="links">
-      <a href="https://ftcscout.org/events/${season}/${encodeURIComponent(e.code)}" target="_blank" rel="noopener">FTCScout ↗</a>
-      <a href="https://ftc-events.firstinspires.org/${season}/${encodeURIComponent(e.code)}" target="_blank" rel="noopener">FTC Events ↗</a>
-      ${safeUrl(e.liveStream) ? `<a href="${esc(safeUrl(e.liveStream))}" target="_blank" rel="noopener">Livestream ↗</a>` : ""}
-      ${safeUrl(e.website) ? `<a href="${esc(safeUrl(e.website))}" target="_blank" rel="noopener">Website ↗</a>` : ""}
+    <div class="actions">
+      <a class="btn primary" href="https://ftcscout.org/events/${season}/${encodeURIComponent(e.code)}" target="_blank" rel="noopener">Open in FTCScout ↗</a>
+      <a class="btn outline" href="https://ftc-events.firstinspires.org/${season}/${encodeURIComponent(e.code)}" target="_blank" rel="noopener">FTC Events ↗</a>
+      ${safeUrl(e.liveStream) ? `<a class="btn link" href="${esc(safeUrl(e.liveStream))}" target="_blank" rel="noopener">Watch the livestream ↗</a>` : ""}
+      ${safeUrl(e.website) ? `<a class="btn link" href="${esc(safeUrl(e.website))}" target="_blank" rel="noopener">Event website ↗</a>` : ""}
     </div>`;
 }
 
@@ -467,13 +502,15 @@ function safeUrl(url) {
   }
 }
 
-// Clicking team/event rows anywhere in the sidebar selects them.
-$("sidebar").addEventListener("click", (ev) => {
-  const row = ev.target.closest("[data-team], [data-event]");
-  if (!row) return;
-  if (row.dataset.team) select("team", Number(row.dataset.team), { fly: true });
-  else select("event", row.dataset.event, { fly: true });
-});
+// Clicking team/event rows in the sidebar or the details card selects them.
+for (const id of ["sidebar", "details"]) {
+  $(id).addEventListener("click", (ev) => {
+    const row = ev.target.closest("[data-team], [data-event]");
+    if (!row) return;
+    if (row.dataset.team) select("team", Number(row.dataset.team), { fly: true });
+    else select("event", row.dataset.event, { fly: true });
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Filters
@@ -548,14 +585,17 @@ function setupFilters() {
     f.onlyStats = e.target.checked;
     renderAll();
   });
-  $("color-by").addEventListener("change", (e) => {
-    f.colorBy = e.target.value;
+  $("color-by").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-color]");
+    if (!btn) return;
+    f.colorBy = btn.dataset.color;
+    for (const b of $("color-by").querySelectorAll("[data-color]")) b.setAttribute("aria-pressed", String(b === btn));
     renderAll();
   });
 
   $("status-filters").innerHTML = STATUSES.map(
     ([s, label]) =>
-      `<button type="button" class="chip" data-status="${s}" aria-pressed="true"><span class="event-marker ${s}" style="width:9px;height:9px;animation:none"></span>${label}</button>`,
+      `<button type="button" class="chip" data-status="${s}" aria-pressed="true"><i class="diamond ${s}"></i>${label}</button>`,
   ).join("");
   $("status-filters").addEventListener("click", (e) => {
     const chip = e.target.closest("[data-status]");
@@ -568,13 +608,15 @@ function setupFilters() {
   });
 
   $("category-filters").innerHTML = CATEGORIES.map(
-    (c) =>
-      `<label class="check"><input type="checkbox" data-category="${esc(c)}" ${f.categories.has(c) ? "checked" : ""}> ${esc(c)}</label>`,
+    (c) => `<button type="button" class="tag" data-category="${esc(c)}" aria-pressed="${f.categories.has(c)}">${esc(c)}</button>`,
   ).join("");
-  $("category-filters").addEventListener("change", (e) => {
-    const c = e.target.dataset.category;
-    if (e.target.checked) f.categories.add(c);
-    else f.categories.delete(c);
+  $("category-filters").addEventListener("click", (e) => {
+    const tag = e.target.closest("[data-category]");
+    if (!tag) return;
+    const c = tag.dataset.category;
+    if (f.categories.has(c)) f.categories.delete(c);
+    else f.categories.add(c);
+    tag.setAttribute("aria-pressed", String(f.categories.has(c)));
     renderAll();
   });
 
@@ -585,21 +627,30 @@ function setupFilters() {
     writeHash();
   });
 
-  $("sidebar-toggle").addEventListener("click", () => setSidebarOpen($("sidebar").classList.contains("collapsed")));
+  // On phones the controls live in a sheet opened from the filter button.
+  $("sidebar-open").addEventListener("click", () => setSidebarOpen(true));
+  $("sidebar-close").addEventListener("click", () => setSidebarOpen(false));
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && $("sidebar").classList.contains("open")) setSidebarOpen(false);
+    // "/" jumps to search, as the hint in the search box says.
+    if (e.key === "/" && !e.target.closest("input, select, textarea")) {
+      const input = matchMedia("(max-width: 720px)").matches ? $("search-m") : $("search");
+      e.preventDefault();
+      input.focus();
+    }
+  });
 }
 
 function setSidebarOpen(open) {
-  $("sidebar").classList.toggle("collapsed", !open);
-  $("sidebar-toggle").setAttribute("aria-expanded", String(open));
-  setTimeout(() => map.invalidateSize(), 50);
+  $("sidebar").classList.toggle("open", open);
+  $("sidebar-open").setAttribute("aria-expanded", String(open));
+  if (open) $("sidebar-close").focus();
 }
 
 // ---------------------------------------------------------------------------
 // Search
 
-function setupSearch() {
-  const input = $("search");
-  const list = $("search-results");
+function setupSearch(input, list) {
   let results = [];
   let active = -1;
 
@@ -698,7 +749,8 @@ function showError(err) {
 
 async function main() {
   setupFilters();
-  setupSearch();
+  setupSearch($("search"), $("search-results"));
+  setupSearch($("search-m"), $("search-results-m"));
   const initial = readHash();
   const manifest = await loadSeasons();
   const seasons = manifest.seasons ?? [];

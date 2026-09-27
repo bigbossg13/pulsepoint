@@ -102,6 +102,8 @@ const map = L.map("map", { preferCanvas: true, worldCopyJump: true, zoomControl:
   [30, -30],
   2,
 );
+// One canvas for every vector layer (team dots and link lines). A second
+// canvas would be stacked on top and swallow hovers and clicks on the dots.
 const renderer = L.canvas({ padding: 0.5 });
 const dark = matchMedia("(prefers-color-scheme: dark)");
 // Standard OpenStreetMap tiles need no API key. They're toned down (and
@@ -325,14 +327,14 @@ function renderLinks() {
     if (!team?.loc) return;
     for (const code of team.events ?? []) {
       const ev = state.eventsByCode.get(code);
-      if (ev?.loc) L.polyline([team.loc, ev.loc], { color, weight: 2, opacity: 0.8, dashArray: "4 6", interactive: false }).addTo(linkLayer);
+      if (ev?.loc) L.polyline([team.loc, ev.loc], { renderer, color, weight: 2, opacity: 0.8, dashArray: "4 6", interactive: false }).addTo(linkLayer);
     }
   } else {
     const ev = state.eventsByCode.get(sel.id);
     if (!ev?.loc) return;
     for (const n of ev.teams ?? []) {
       const t = state.teamsByNumber.get(n);
-      if (t?.loc) L.polyline([ev.loc, t.loc], { color, weight: 1.5, opacity: 0.6, dashArray: "3 6", interactive: false }).addTo(linkLayer);
+      if (t?.loc) L.polyline([ev.loc, t.loc], { renderer, color, weight: 1.5, opacity: 0.6, dashArray: "3 6", interactive: false }).addTo(linkLayer);
     }
   }
 }

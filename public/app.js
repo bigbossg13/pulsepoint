@@ -98,13 +98,11 @@ const state = {
 // ---------------------------------------------------------------------------
 // Map setup
 
-const map = L.map("map", { preferCanvas: true, worldCopyJump: true, zoomControl: true, minZoom: 2 }).setView(
-  [30, -30],
-  2,
-);
-// One canvas for every vector layer (team dots and link lines). A second
-// canvas would be stacked on top and swallow hovers and clicks on the dots.
+// One canvas for every vector layer (team dots, link lines, cluster spider
+// legs). A second canvas would be stacked on top and swallow hovers and
+// clicks on the team dots, so it is also the map's default renderer.
 const renderer = L.canvas({ padding: 0.5 });
+const map = L.map("map", { renderer, worldCopyJump: true, zoomControl: true, minZoom: 2 }).setView([30, -30], 2);
 const dark = matchMedia("(prefers-color-scheme: dark)");
 // Standard OpenStreetMap tiles need no API key. They're toned down (and
 // inverted in dark mode) with a CSS filter on .basemap so markers stand out.
@@ -136,7 +134,11 @@ const teamLayer = L.markerClusterGroup({
     });
   },
 });
+// Events sit in the same cities as teams, so their markers get a pane below
+// the team clusters; otherwise they cover the team clusters and take the clicks.
+map.createPane("events").style.zIndex = 550;
 const eventLayer = L.markerClusterGroup({
+  clusterPane: "events",
   showCoverageOnHover: false,
   maxClusterRadius: 30,
   disableClusteringAtZoom: 8,
@@ -200,7 +202,7 @@ function buildMarkers() {
   }
   for (const ev of state.data.events) {
     if (!ev.loc) continue;
-    const m = L.marker(ev.loc, { status: ev.status, keyboard: true, title: ev.name });
+    const m = L.marker(ev.loc, { pane: "events", status: ev.status, keyboard: true, title: ev.name });
     m.bindTooltip(() => eventTooltip(ev), { direction: "top", offset: [0, -8] });
     m.on("click", () => select("event", ev.code));
     state.markers.events.set(ev.code, m);

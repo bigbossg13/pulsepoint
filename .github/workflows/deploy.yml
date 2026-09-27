@@ -96,6 +96,9 @@ jobs:
           path: data/geocache.json
           key: geocache-${{ github.run_id }}
 
+      - name: Stamp asset URLs so browsers load the new version
+        run: sed -i -E 's#(href|src)="(styles\.css|app\.js)"#\1="\2?v=${{ github.sha }}"#' public/index.html
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: public

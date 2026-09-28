@@ -98,3 +98,13 @@ test("spread keeps the first team in place and nudges the rest", () => {
   assert.notDeepEqual(moved, [10, 20]);
   assert.ok(Math.abs(moved[0] - 10) < 0.05 && Math.abs(moved[1] - 20) < 0.05);
 });
+
+test("Chinese Taipei is geocoded as Taiwan, restricted to Taiwan", async () => {
+  const calls = [];
+  const geo = new Geocoder({ fetcher: async (p) => (calls.push(p), [25.03, 121.56]) });
+  await geo.place({ city: "Taipei", country: "Chinese Taipei" });
+  assert.deepEqual(calls.at(-1), { city: "Taipei", country: "Taiwan", countrycodes: "tw" });
+  assert.ok("place|taipei||taiwan" in geo.cache);
+  await geo.address("1 Main Rd, Taipei, Chinese Taipei", { city: "Taipei", country: "Chinese Taipei" });
+  assert.deepEqual(calls.at(-1), { q: "1 Main Rd, Taipei, Taiwan", countrycodes: "tw" });
+});

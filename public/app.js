@@ -80,6 +80,7 @@ const state = {
   data: null,
   teamsByNumber: new Map(),
   eventsByCode: new Map(),
+  cities: new Map(), // "city|state|country" -> { city, state, country, teams, events }
   markers: { teams: new Map(), events: new Map() },
   filters: {
     country: "",
@@ -176,6 +177,7 @@ async function loadSeason(season) {
   state.season = season;
   state.data = data;
   state.teamsByNumber = new Map(data.teams.map((t) => [t.number, t]));
+  state.cities = buildCityIndex(data);
   state.eventsByCode = new Map(data.events.map((e) => [e.code, e]));
   state.ctx = { ranked: data.teams.filter((t) => t.stats?.tot?.r).length, season };
   populateLocations();
@@ -232,6 +234,8 @@ function renderAll() {
   if (!state.data) return;
   const mode = COLOR_MODES[state.filters.colorBy];
   const selectedTeam = state.selected?.kind === "team" ? state.selected.id : null;
+  const cityTeams =
+    state.selected?.kind === "city" ? new Set(state.cities.get(state.selected.id)?.teams.map((t) => t.number)) : null;
 
   const teamMarkers = [];
   for (const team of state.data.teams) {
@@ -240,12 +244,13 @@ function renderAll() {
     const bucket = mode.bucket(team, state.ctx);
     m.options.bucket = bucket;
     const isSel = team.number === selectedTeam;
+    const inCity = cityTeams?.has(team.number);
     m.setStyle({
       fillColor: colorFor(bucket),
-      color: isSel ? css("--accent") : "#fff",
-      weight: isSel ? 4 : 2,
+      color: isSel || inCity ? css("--accent") : "#fff",
+      weight: isSel ? 4 : inCity ? 3 : 2,
     });
-    m.setRadius(isSel ? 11 : 7);
+    m.setRadius(isSel ? 11 : inCity ? 9 : 7);
     teamMarkers.push(m);
   }
   teamLayer.clearLayers();
@@ -344,19 +349,49 @@ function renderLinks() {
 // ---------------------------------------------------------------------------
 // Selection + details panel
 
+const cityKey = (o) => (o.city ? [o.city, o.state ?? "", o.country ?? ""].join("|") : null);
+
+function buildCityIndex(data) {
+  const cities = new Map();
+  const entry = (o) => {
+    const key = cityKey(o);
+    if (!key) return null;
+    if (!cities.has(key)) cities.set(key, { key, city: o.city, state: o.state, country: o.country, teams: [], events: [] });
+    return cities.get(key);
+  };
+  for (const t of data.teams) entry(t)?.teams.push(t);
+  for (const e of data.events) entry(e)?.events.push(e);
+  return cities;
+}
+
+function lookup(kind, id) {
+  if (kind === "team") return state.teamsByNumber.get(id);
+  if (kind === "event") return state.eventsByCode.get(id);
+  if (kind === "city") return state.cities.get(id);
+  return null;
+}
+
 function select(kind, id, { fly = false } = {}) {
   state.selected = kind ? { kind, id } : null;
   writeHash();
   renderAll();
   renderDetails();
   if (!fly || !kind) return;
-  const item = kind === "team" ? state.teamsByNumber.get(id) : state.eventsByCode.get(id);
-  if (!item?.loc) return;
+  const item = lookup(kind, id);
+  if (!item) return;
+  const pts = [];
+  if (kind === "city") {
+    // Frame every team and event in the city.
+    pts.push(...item.teams.map((t) => t.loc), ...item.events.map((e) => e.loc));
+  } else {
+    pts.push(item.loc);
+    // Frame an event together with the teams attending it.
+    if (kind === "event") pts.push(...(item.teams ?? []).map((n) => state.teamsByNumber.get(n)?.loc));
+  }
+  if (!pts.filter(Boolean).length) return;
+  pts.splice(0, pts.length, ...pts.filter(Boolean));
   // Keep the target in the part of the map the details card doesn't cover.
   const [padTL, padBR] = detailsPadding();
-  const pts = [item.loc];
-  // Frame an event together with the teams attending it.
-  if (kind === "event") pts.push(...(item.teams ?? []).map((n) => state.teamsByNumber.get(n)?.loc).filter(Boolean));
   const maxZoom = Math.max(map.getZoom(), 11);
   map.flyToBounds(L.latLngBounds(pts), {
     paddingTopLeft: padTL,
@@ -386,7 +421,8 @@ function renderDetails() {
     return;
   }
   el.hidden = false;
-  el.innerHTML = sel.kind === "team" ? teamDetails(state.teamsByNumber.get(sel.id)) : eventDetails(state.eventsByCode.get(sel.id));
+  const item = lookup(sel.kind, sel.id);
+  el.innerHTML = sel.kind === "team" ? teamDetails(item) : sel.kind === "event" ? eventDetails(item) : cityDetails(item);
   el.querySelector(".close")?.addEventListener("click", () => select(null));
   el.scrollTop = 0;
   if (matchMedia("(max-width: 720px)").matches) setSidebarOpen(false);
@@ -447,11 +483,42 @@ function teamDetails(t) {
     </div>`;
 }
 
+function teamRow(t) {
+  const meta = `${t.number}${t.stats?.tot ? ` · rank #${t.stats.tot.r.toLocaleString()}` : ""}`;
+  return `<li data-team="${t.number}"><i class="dot" style="background:${colorFor(COLOR_MODES.opr.bucket(t, state.ctx))}"></i><span class="main"><span>${esc(t.name ?? `Team ${t.number}`)}</span><span class="meta">${meta}</span></span><span class="num">${t.stats?.tot ? fmt(t.stats.tot.v) : ""}</span></li>`;
+}
+
+const byRank = (a, b) => (a.stats?.tot?.r ?? Infinity) - (b.stats?.tot?.r ?? Infinity) || a.number - b.number;
+
+function cityDetails(c) {
+  if (!c) return notFound("City");
+  const teams = [...c.teams].sort(byRank);
+  const events = [...c.events].sort((a, b) => (a.start ?? "").localeCompare(b.start ?? ""));
+  const oprs = teams.map((t) => t.stats?.tot?.v).filter((v) => typeof v === "number");
+  const avg = oprs.length ? oprs.reduce((a, b) => a + b, 0) / oprs.length : null;
+  const n = (k, word) => `${k.toLocaleString()} ${word}${k === 1 ? "" : "s"}`;
+  return `
+    <div class="head">
+      <div>
+        <span class="eyebrow">City · ${seasonLabel(state.season)}</span>
+        <h2>${esc(c.city)}</h2>
+        <span class="sub">${esc([c.state, c.country].filter(Boolean).join(", "))}</span>
+      </div>
+      ${CLOSE_BTN}
+    </div>
+    <div class="rank-badge none"><span><strong>${n(teams.length, "team")} · ${n(events.length, "event")}</strong>${
+      avg !== null ? ` · average OPR ${fmt(avg)}` : ""
+    }</span></div>
+    <h3>Teams (${teams.length})</h3>
+    ${teams.length ? `<ul class="list scroll">${teams.map(teamRow).join("")}</ul>` : `<p class="sub" style="margin:0">No teams here this season.</p>`}
+    ${events.length ? `<h3>Events (${events.length})</h3><ul class="list">${events.map(eventRow).join("")}</ul>` : ""}`;
+}
+
 function eventDetails(e) {
   if (!e) return notFound("Event");
   const teams = (e.teams ?? [])
     .map((n) => state.teamsByNumber.get(n) ?? { number: n })
-    .sort((a, b) => (a.stats?.tot?.r ?? Infinity) - (b.stats?.tot?.r ?? Infinity) || a.number - b.number);
+    .sort(byRank);
   const oprs = teams.map((t) => t.stats?.tot?.v).filter((v) => typeof v === "number");
   const avg = oprs.length ? oprs.reduce((a, b) => a + b, 0) / oprs.length : null;
   const season = state.season;
@@ -477,12 +544,7 @@ function eventDetails(e) {
     <h3>Teams (${teams.length})</h3>
     ${
       teams.length
-        ? `<ul class="list scroll">${teams
-            .map(
-              (t) =>
-                `<li data-team="${t.number}"><i class="dot" style="background:${colorFor(COLOR_MODES.opr.bucket(t, state.ctx))}"></i><span class="main"><span>${esc(t.name ?? `Team ${t.number}`)}</span><span class="meta">${t.number}${t.stats?.tot ? ` · rank #${t.stats.tot.r.toLocaleString()}` : ""}</span></span><span class="num">${t.stats?.tot ? fmt(t.stats.tot.v) : ""}</span></li>`,
-            )
-            .join("")}</ul>`
+        ? `<ul class="list scroll">${teams.map(teamRow).join("")}</ul>`
         : `<p class="sub" style="margin:0">Team list not published yet.</p>`
     }
     <div class="actions">
@@ -713,6 +775,20 @@ function search(q) {
     const score = num === q ? 0 : isNum && num.startsWith(q) ? 1 : t.name?.toLowerCase().includes(q) ? 2 : -1;
     if (score >= 0) out.push({ score, type: "team", id: t.number, label: `${t.number} ${t.name ?? ""}`, kind: place(t) || "Team" });
   }
+  if (!isNum && q.length >= 2) {
+    for (const c of state.cities.values()) {
+      const name = c.city.toLowerCase();
+      const score = name === q ? 0.5 : name.startsWith(q) ? 1.5 : name.includes(q) ? 2.5 : -1;
+      if (score < 0 || !c.teams.length) continue;
+      out.push({
+        score,
+        type: "city",
+        id: c.key,
+        label: [c.city, c.state, c.country].filter(Boolean).join(", "),
+        kind: `City · ${c.teams.length} team${c.teams.length === 1 ? "" : "s"}`,
+      });
+    }
+  }
   for (const e of state.data.events) {
     const hit = e.name?.toLowerCase().includes(q) || e.code.toLowerCase() === q;
     if (hit) out.push({ score: 3, type: "event", id: e.code, label: e.name, kind: `Event · ${e.start ?? "TBA"}` });
@@ -721,7 +797,7 @@ function search(q) {
 }
 
 // ---------------------------------------------------------------------------
-// URL state: #season=2025&team=1234 / &event=USCAFFS / &country=USA
+// URL state: #season=2025&team=1234 / &event=USCAFFS / &city=Houston|TX|USA / &country=USA
 
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
@@ -729,6 +805,7 @@ function readHash() {
     season: p.get("season") ? Number(p.get("season")) : null,
     team: p.get("team") ? Number(p.get("team")) : null,
     event: p.get("event"),
+    city: p.get("city"),
     country: p.get("country") ?? "",
     state: p.get("state") ?? "",
   };
@@ -772,6 +849,7 @@ async function main() {
   fitToFilter();
   if (initial.team) select("team", initial.team, { fly: true });
   else if (initial.event) select("event", initial.event, { fly: true });
+  else if (initial.city) select("city", initial.city, { fly: true });
   else writeHash();
 }
 

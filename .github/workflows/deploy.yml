@@ -86,8 +86,9 @@ jobs:
         run: |
           rm -f public/data/*.json
           current=$(node -e 'const d=new Date();console.log(d.getUTCMonth()>=8?d.getUTCFullYear():d.getUTCFullYear()-1)')
-          npm run build-data -- --season "$current"
+          # Previous season first: the current season's build uses its team list.
           npm run build-data -- --season "$((current - 1))"
+          npm run build-data -- --season "$current"
 
       - name: Save geocode cache
         if: always() && (steps.mode.outputs.mode == 'full' || steps.reuse.outcome == 'failure')

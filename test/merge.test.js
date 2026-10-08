@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { attendanceFromEvents, eventCategory, eventStatus, mergeEvents, mergeTeams } from "../lib/merge.js";
+import { activeTeams, attendanceFromEvents, eventCategory, eventStatus, mergeEvents, mergeTeams } from "../lib/merge.js";
 import { Geocoder, spread } from "../lib/geocode.js";
 
 const scoutEvents = [
@@ -107,4 +107,21 @@ test("Chinese Taipei is geocoded as Taiwan, restricted to Taiwan", async () => {
   assert.ok("place|taipei||taiwan" in geo.cache);
   await geo.address("1 Main Rd, Taipei, Chinese Taipei", { city: "Taipei", country: "Chinese Taipei" });
   assert.deepEqual(calls.at(-1), { q: "1 Main Rd, Taipei, Taiwan", countrycodes: "tw" });
+});
+
+test("activeTeams keeps returning teams and rookies early, only competitors late", () => {
+  const teams = [
+    { number: 1, events: ["A"] },              // on a roster
+    { number: 2, rookieYear: 2026 },           // rookie
+    { number: 3, rookieYear: 2015 },           // competed last season
+    { number: 4, rookieYear: 2010 },           // long inactive
+  ];
+  const early = [{ status: "completed" }, { status: "upcoming" }, { status: "upcoming" }];
+  const late = [{ status: "completed" }, { status: "completed" }, { status: "upcoming" }];
+  const last = new Set([3]);
+  const nums = (ts) => ts.map((t) => t.number);
+  assert.deepEqual(nums(activeTeams(teams, { events: early, season: 2026, lastSeasonTeams: last })), [1, 2, 3]);
+  assert.deepEqual(nums(activeTeams(teams, { events: late, season: 2026, lastSeasonTeams: last })), [1]);
+  assert.deepEqual(nums(activeTeams(teams, { events: early, season: 2026 })), [1, 2, 3, 4]);
+  assert.deepEqual(nums(activeTeams([{ number: 5 }], { events: late, season: 2026 })), [5]);
 });

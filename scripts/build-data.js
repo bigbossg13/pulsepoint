@@ -15,7 +15,7 @@ import { parseArgs } from "node:util";
 import * as scout from "../lib/ftcscout.js";
 import * as official from "../lib/ftcevents.js";
 import { Geocoder, placeKey, spread } from "../lib/geocode.js";
-import { attendanceFromEvents, mergeEvents, mergeTeams } from "../lib/merge.js";
+import { activeTeams, attendanceFromEvents, mergeEvents, mergeTeams } from "../lib/merge.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -80,12 +80,16 @@ if (!officialEvents && !officialTeams && !scoutEvents) {
 }
 
 const merged = mergeTeams({ scoutTeams: scoutTeams ?? [], officialTeams: officialTeams ?? [], attendance });
-// The FTC Events team list includes many teams that never compete in a given
-// season. Once event rosters exist, keep only teams that attended an event or
-// have stats; before that (early season) the registration list is all we have.
-const teams = attendance.size ? merged.filter((t) => t.events?.length || t.stats?.tot) : merged;
-if (teams.length < merged.length) log(`Dropped ${merged.length - teams.length} registered teams with no events this season.`);
 const events = mergeEvents({ scoutEvents: scoutEvents ?? [], officialEvents: officialEvents ?? [] });
+
+// Last season's teams (if that season was built first) tell us which
+// registrations are likely active early in this season.
+const lastSeasonPath = join(args.out, `${season - 1}.json`);
+const lastSeasonTeams = existsSync(lastSeasonPath)
+  ? new Set(JSON.parse(readFileSync(lastSeasonPath, "utf8")).teams.map((t) => t.number))
+  : null;
+const teams = activeTeams(merged, { events, season, lastSeasonTeams });
+if (teams.length < merged.length) log(`Dropped ${merged.length - teams.length} registered teams that look inactive this season.`);
 
 const geocoder = new Geocoder({ cachePath: join(root, "data", "geocache.json"), limit: geocodeLimit });
 log(`Geocoding ${teams.length} teams and ${events.length} events (cache: ${Object.keys(geocoder.cache).length})…`);
